@@ -220,6 +220,8 @@ anaconda3/
 .Trash-*
 .fuse_hidden*
 
+CLAUDE.md
+
 # Application specific (add your own)
 uploads/
 downloads/
