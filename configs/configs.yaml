@@ -1,0 +1,44 @@
+models:
+  qwen3_235b:
+    id: "qwen3-235b-a22b"
+    name: "Qwen3 235B"
+    display_name: "Qwen3 235B (Advanced)"
+    max_tokens: 4096
+    deployment_type: "serverless"
+
+  llama_scout:
+    id: "accounts/fireworks/models/llama4-scout-instruct-basic"
+    name: "Llama Scout"
+    display_name: "Llama 4 Scout (17B)"
+    max_tokens: 8192
+    deployment_type: "serverless"
+
+  llama_maverick:
+    id: "accounts/fireworks/models/llama4-maverick-instruct-basic"
+    name: "Llama Maverick"
+    display_name: "Llama 4 Maverick (17B)"
+    max_tokens: 8192
+    deployment_type: "serverless"
+
+  deepseek_r1:
+    id: "accounts/fireworks/models/deepseek-r1"
+    name: "DeepSeek R1"
+    display_name: "DeepSeek R1"
+    max_tokens: 8192
+    deployment_type: "serverless"
+
+
+defaults:
+  temperature: 0.2
+  max_tokens: 512
+  stream: true
+  timeout: 30
+
+api:
+  max_concurrent_requests: 50
+  rate_limit_per_minute: 1000
+
+
+chat:
+  max_history_length: 20
+  max_message_length: 10000
