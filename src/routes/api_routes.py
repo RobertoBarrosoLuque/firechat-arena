@@ -1,32 +1,27 @@
-"""
-FastAPI routes for Fireworks chat and benchmark demo
-"""
 import asyncio
 import uuid
 from typing import Dict, List, Optional, Any
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import json
-import logging
 import os
-from datetime import datetime
 
-from fireworks_helpers import FireworksStreamer, FireworksConfig, StreamingStats
-from benchmark_service_fireworks import (
+from src.modules.llm_completion import FireworksStreamer, FireworksConfig
+from src.modules.benchmark import (
     FireworksBenchmarkService,
     BenchmarkRequest,
-    BenchmarkReporter
+    BenchmarkReporter,
 )
+from src.logging import logger
 
-logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Fireworks Chat & Benchmark API",
     description="API for chat interactions and performance benchmarking with Fireworks models",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # CORS middleware
@@ -59,7 +54,9 @@ class SingleChatRequest(BaseModel):
     message: str = Field(..., description="User message")
     max_tokens: Optional[int] = Field(512, description="Maximum tokens to generate")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
-    conversation_id: Optional[str] = Field(None, description="Conversation ID for tracking")
+    conversation_id: Optional[str] = Field(
+        None, description="Conversation ID for tracking"
+    )
 
 
 class ChatCompletionRequest(BaseModel):
@@ -67,7 +64,9 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
     max_tokens: Optional[int] = Field(512, description="Maximum tokens to generate")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
-    conversation_id: Optional[str] = Field(None, description="Conversation ID for tracking")
+    conversation_id: Optional[str] = Field(
+        None, description="Conversation ID for tracking"
+    )
 
 
 class ComparisonChatRequest(BaseModel):
@@ -81,16 +80,24 @@ class ComparisonChatRequest(BaseModel):
 class BenchmarkConfigRequest(BaseModel):
     model_key: str = Field(..., description="Model key to benchmark")
     prompt: str = Field(..., description="Test prompt")
-    concurrency: int = Field(10, ge=1, le=100, description="Number of concurrent requests")
-    max_tokens: int = Field(256, ge=50, le=1024, description="Maximum tokens per request")
+    concurrency: int = Field(
+        10, ge=1, le=100, description="Number of concurrent requests"
+    )
+    max_tokens: int = Field(
+        256, ge=50, le=1024, description="Maximum tokens per request"
+    )
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
 
 
 class ComparisonBenchmarkRequest(BaseModel):
     model_keys: List[str] = Field(..., description="Model keys to compare")
     prompt: str = Field(..., description="Test prompt")
-    concurrency: int = Field(10, ge=1, le=100, description="Number of concurrent requests")
-    max_tokens: int = Field(256, ge=50, le=1024, description="Maximum tokens per request")
+    concurrency: int = Field(
+        10, ge=1, le=100, description="Number of concurrent requests"
+    )
+    max_tokens: int = Field(
+        256, ge=50, le=1024, description="Maximum tokens per request"
+    )
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
 
 
@@ -115,6 +122,7 @@ def generate_session_id() -> str:
 
 # Routes
 
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -137,7 +145,9 @@ async def get_model_info(model_key: str):
     """Get detailed information about a specific model"""
     try:
         if not validate_model_key(model_key):
-            raise HTTPException(status_code=404, detail=f"Model '{model_key}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Model '{model_key}' not found"
+            )
 
         model_info = config.get_model(model_key)
         return {"model": model_info}
@@ -153,7 +163,9 @@ async def single_chat(request: SingleChatRequest):
     """Single model chat with streaming response"""
     try:
         if not validate_model_key(request.model_key):
-            raise HTTPException(status_code=400, detail=f"Invalid model key: {request.model_key}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid model key: {request.model_key}"
+            )
 
         session_id = request.conversation_id or generate_session_id()
 
@@ -163,11 +175,11 @@ async def single_chat(request: SingleChatRequest):
                 messages = [{"role": "user", "content": request.message}]
 
                 async for chunk in streamer.stream_chat_completion(
-                        model_key=request.model_key,
-                        messages=messages,
-                        request_id=session_id,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature
+                    model_key=request.model_key,
+                    messages=messages,
+                    request_id=session_id,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
                 ):
                     # Format as server-sent events
                     yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
@@ -185,8 +197,8 @@ async def single_chat(request: SingleChatRequest):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Session-ID": session_id
-            }
+                "X-Session-ID": session_id,
+            },
         )
 
     except HTTPException:
@@ -201,19 +213,23 @@ async def chat_completion(request: ChatCompletionRequest):
     """Chat completion with conversation history"""
     try:
         if not validate_model_key(request.model_key):
-            raise HTTPException(status_code=400, detail=f"Invalid model key: {request.model_key}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid model key: {request.model_key}"
+            )
 
         session_id = request.conversation_id or generate_session_id()
-        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        messages = [
+            {"role": msg.role, "content": msg.content} for msg in request.messages
+        ]
 
         async def generate_response():
             try:
                 async for chunk in streamer.stream_chat_completion(
-                        model_key=request.model_key,
-                        messages=messages,
-                        request_id=session_id,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature
+                    model_key=request.model_key,
+                    messages=messages,
+                    request_id=session_id,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
                 ):
                     yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
 
@@ -229,8 +245,8 @@ async def chat_completion(request: ChatCompletionRequest):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Session-ID": session_id
-            }
+                "X-Session-ID": session_id,
+            },
         )
 
     except HTTPException:
@@ -245,11 +261,15 @@ async def comparison_chat(request: ComparisonChatRequest):
     """Side-by-side model comparison chat"""
     try:
         if len(request.model_keys) != 2:
-            raise HTTPException(status_code=400, detail="Exactly 2 model keys required for comparison")
+            raise HTTPException(
+                status_code=400, detail="Exactly 2 model keys required for comparison"
+            )
 
         for model_key in request.model_keys:
             if not validate_model_key(model_key):
-                raise HTTPException(status_code=400, detail=f"Invalid model key: {model_key}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid model key: {model_key}"
+                )
 
         comparison_id = request.comparison_id or generate_session_id()
 
@@ -265,7 +285,7 @@ async def comparison_chat(request: ComparisonChatRequest):
                         messages=messages,
                         request_id=f"{comparison_id}_{i}",
                         max_tokens=request.max_tokens,
-                        temperature=request.temperature
+                        temperature=request.temperature,
                     )
 
                 # Stream responses from both models
@@ -278,43 +298,40 @@ async def comparison_chat(request: ComparisonChatRequest):
                             model_index = int(gen_key.split("_")[1])
                             model_key = request.model_keys[model_index]
 
-                            yield f"data: {json.dumps({
+                            yield f"""data: {json.dumps({
                                 'type': 'content',
                                 'model_index': model_index,
                                 'model_key': model_key,
                                 'content': chunk
-                            })}\n\n"
+                            })}\n\n"""
 
                         except StopAsyncIteration:
                             active_generators.remove(gen_key)
                             model_index = int(gen_key.split("_")[1])
 
-                            yield f"data: {json.dumps({
+                            yield f"""data: {json.dumps({
                                 'type': 'model_done',
                                 'model_index': model_index,
                                 'model_key': request.model_keys[model_index]
-                            })}\n\n"
+                            })}\n\n"""
 
                         except Exception as e:
                             logger.error(f"Error in model {gen_key}: {str(e)}")
                             active_generators.remove(gen_key)
                             model_index = int(gen_key.split("_")[1])
 
-                            yield f"data: {json.dumps({
+                            yield f"""data: {json.dumps({
                                 'type': 'error',
                                 'model_index': model_index,
                                 'model_key': request.model_keys[model_index],
                                 'error': str(e)
-                            })}\n\n"
+                            })}\n\n"""
 
                     # Small delay to prevent tight loop
                     await asyncio.sleep(0.01)
 
                 # Send final completion signal
-                yield f"data: {json.dumps({
-                    'type': 'comparison_done',
-                    'comparison_id': comparison_id
-                })}\n\n"
+                yield f"data: {json.dumps({'type': 'comparison_done','comparison_id': comparison_id})}\n\n"
 
             except Exception as e:
                 logger.error(f"Error in comparison chat: {str(e)}")
@@ -326,8 +343,8 @@ async def comparison_chat(request: ComparisonChatRequest):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "X-Comparison-ID": comparison_id
-            }
+                "X-Comparison-ID": comparison_id,
+            },
         )
 
     except HTTPException:
@@ -342,14 +359,16 @@ async def single_benchmark(request: BenchmarkConfigRequest):
     """Run benchmark on a single model"""
     try:
         if not validate_model_key(request.model_key):
-            raise HTTPException(status_code=400, detail=f"Invalid model key: {request.model_key}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid model key: {request.model_key}"
+            )
 
         benchmark_request = BenchmarkRequest(
             model_key=request.model_key,
             prompt=request.prompt,
             concurrency=request.concurrency,
             max_tokens=request.max_tokens,
-            temperature=request.temperature
+            temperature=request.temperature,
         )
 
         result = await benchmark_service.run_single_benchmark(benchmark_request)
@@ -368,14 +387,16 @@ async def comparison_benchmark(request: ComparisonBenchmarkRequest):
     try:
         for model_key in request.model_keys:
             if not validate_model_key(model_key):
-                raise HTTPException(status_code=400, detail=f"Invalid model key: {model_key}")
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid model key: {model_key}"
+                )
 
         results = await benchmark_service.run_comparison_benchmark(
             model_keys=request.model_keys,
             prompt=request.prompt,
             concurrency=request.concurrency,
             max_tokens=request.max_tokens,
-            temperature=request.temperature
+            temperature=request.temperature,
         )
 
         # Generate comparison report
@@ -395,7 +416,9 @@ async def streaming_benchmark(request: BenchmarkConfigRequest):
     """Run benchmark with real-time progress streaming"""
     try:
         if not validate_model_key(request.model_key):
-            raise HTTPException(status_code=400, detail=f"Invalid model key: {request.model_key}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid model key: {request.model_key}"
+            )
 
         async def generate_progress():
             progress_data = []
@@ -409,12 +432,11 @@ async def streaming_benchmark(request: BenchmarkConfigRequest):
                     prompt=request.prompt,
                     concurrency=request.concurrency,
                     max_tokens=request.max_tokens,
-                    temperature=request.temperature
+                    temperature=request.temperature,
                 )
 
                 result = await benchmark_service.run_single_benchmark(
-                    benchmark_request,
-                    progress_callback
+                    benchmark_request, progress_callback
                 )
 
                 # Stream all progress events
@@ -422,25 +444,22 @@ async def streaming_benchmark(request: BenchmarkConfigRequest):
                     yield f"data: {json.dumps(progress)}\n\n"
 
                 # Send final result
-                yield f"data: {json.dumps({
+                yield f"""data: {json.dumps({
                     'event': 'final_result',
                     'data': result.to_dict()
-                })}\n\n"
+                })}\n\n"""
 
             except Exception as e:
                 logger.error(f"Error in streaming benchmark: {str(e)}")
-                yield f"data: {json.dumps({
+                yield f"""data: {json.dumps({
                     'event': 'error',
                     'data': {'error': str(e)}
-                })}\n\n"
+                })}\n\n"""
 
         return StreamingResponse(
             generate_progress(),
             media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive"
-            }
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
 
     except HTTPException:
@@ -454,8 +473,7 @@ async def streaming_benchmark(request: BenchmarkConfigRequest):
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
     return JSONResponse(
-        status_code=404,
-        content={"error": "Endpoint not found", "detail": str(exc)}
+        status_code=404, content={"error": "Endpoint not found", "detail": str(exc)}
     )
 
 
@@ -464,7 +482,10 @@ async def internal_error_handler(request, exc):
     logger.error(f"Internal server error: {str(exc)}")
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error", "detail": "An unexpected error occurred"}
+        content={
+            "error": "Internal server error",
+            "detail": "An unexpected error occurred",
+        },
     )
 
 
@@ -485,9 +506,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "api_routes:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
+        "api_routes:app", host="0.0.0.0", port=8000, reload=True, log_level="info"
     )
