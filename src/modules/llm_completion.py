@@ -1,17 +1,16 @@
 import asyncio
 import time
-import logging
 from typing import AsyncGenerator, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 from fireworks import LLM
 import yaml
 
-logger = logging.getLogger(__name__)
-
+from src.logging import logger
 
 @dataclass
 class StreamingStats:
     """Statistics for a streaming response"""
+
     request_id: str
     start_time: float
     first_token_time: Optional[float] = None
@@ -44,22 +43,22 @@ class FireworksConfig:
     """Configuration loader for Fireworks models"""
 
     def __init__(self, config_path: str = "config.yaml"):
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
 
     def get_model(self, model_key: str) -> Dict[str, Any]:
         """Get model configuration by key"""
-        if model_key not in self.config['models']:
+        if model_key not in self.config["models"]:
             raise ValueError(f"Model {model_key} not found in config")
-        return self.config['models'][model_key]
+        return self.config["models"][model_key]
 
     def get_all_models(self) -> Dict[str, Dict[str, Any]]:
         """Get all available models"""
-        return self.config['models']
+        return self.config["models"]
 
     def get_defaults(self) -> Dict[str, Any]:
         """Get default settings"""
-        return self.config.get('defaults', {})
+        return self.config.get("defaults", {})
 
 
 class FireworksStreamer:
@@ -75,20 +74,20 @@ class FireworksStreamer:
         if model_key not in self._llm_cache:
             model_config = self.config.get_model(model_key)
             self._llm_cache[model_key] = LLM(
-                model=model_config['id'],
-                deployment_type=model_config.get('deployment_type', 'serverless'),
-                api_key=self.api_key
+                model=model_config["id"],
+                deployment_type=model_config.get("deployment_type", "serverless"),
+                api_key=self.api_key,
             )
         return self._llm_cache[model_key]
 
     async def stream_completion(
-            self,
-            model_key: str,
-            prompt: str,
-            request_id: str = None,
-            max_tokens: int = None,
-            temperature: float = None,
-            callback: Optional[Callable[[str, StreamingStats], None]] = None
+        self,
+        model_key: str,
+        prompt: str,
+        request_id: str = None,
+        max_tokens: int = None,
+        temperature: float = None,
+        callback: Optional[Callable[[str, StreamingStats], None]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream completion from Fireworks model
@@ -111,13 +110,10 @@ class FireworksStreamer:
         defaults = self.config.get_defaults()
 
         # Set parameters with fallbacks
-        max_tokens = max_tokens or defaults.get('max_tokens', 512)
-        temperature = temperature or defaults.get('temperature', 0.7)
+        max_tokens = max_tokens or defaults.get("max_tokens", 512)
+        temperature = temperature or defaults.get("temperature", 0.7)
 
-        stats = StreamingStats(
-            request_id=request_id,
-            start_time=time.time()
-        )
+        stats = StreamingStats(request_id=request_id, start_time=time.time())
 
         try:
             llm = self._get_llm(model_key)
@@ -127,7 +123,7 @@ class FireworksStreamer:
                 prompt=prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                stream=True
+                stream=True,
             )
 
             async for chunk in self._async_generator_wrapper(response_generator):
@@ -161,13 +157,13 @@ class FireworksStreamer:
             raise
 
     async def stream_chat_completion(
-            self,
-            model_key: str,
-            messages: list,
-            request_id: str = None,
-            max_tokens: int = None,
-            temperature: float = None,
-            callback: Optional[Callable[[str, StreamingStats], None]] = None
+        self,
+        model_key: str,
+        messages: list,
+        request_id: str = None,
+        max_tokens: int = None,
+        temperature: float = None,
+        callback: Optional[Callable[[str, StreamingStats], None]] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Stream chat completion from Fireworks model
@@ -190,13 +186,10 @@ class FireworksStreamer:
         defaults = self.config.get_defaults()
 
         # Set parameters with fallbacks
-        max_tokens = max_tokens or defaults.get('max_tokens', 512)
-        temperature = temperature or defaults.get('temperature', 0.7)
+        max_tokens = max_tokens or defaults.get("max_tokens", 512)
+        temperature = temperature or defaults.get("temperature", 0.7)
 
-        stats = StreamingStats(
-            request_id=request_id,
-            start_time=time.time()
-        )
+        stats = StreamingStats(request_id=request_id, start_time=time.time())
 
         try:
             llm = self._get_llm(model_key)
@@ -206,7 +199,7 @@ class FireworksStreamer:
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                stream=True
+                stream=True,
             )
 
             async for chunk in self._async_generator_wrapper(response_generator):
@@ -267,12 +260,12 @@ class FireworksBenchmark:
         self.config = FireworksConfig(config_path)
 
     async def run_concurrent_benchmark(
-            self,
-            model_key: str,
-            prompt: str,
-            concurrency: int = 10,
-            max_tokens: int = None,
-            temperature: float = None
+        self,
+        model_key: str,
+        prompt: str,
+        concurrency: int = 10,
+        max_tokens: int = None,
+        temperature: float = None,
     ) -> Dict[str, Any]:
         """
         Run concurrent requests for benchmarking
@@ -287,42 +280,46 @@ class FireworksBenchmark:
             request_stats = []
 
             def stats_callback(text: str, stats: StreamingStats):
-                request_stats.append({
-                    'time': stats.total_time,
-                    'tokens': stats.tokens_generated,
-                    'ttft': stats.time_to_first_token,
-                    'tps': stats.tokens_per_second
-                })
+                request_stats.append(
+                    {
+                        "time": stats.total_time,
+                        "tokens": stats.tokens_generated,
+                        "ttft": stats.time_to_first_token,
+                        "tps": stats.tokens_per_second,
+                    }
+                )
 
             try:
                 completion_text = ""
                 async for chunk in self.streamer.stream_completion(
-                        model_key=model_key,
-                        prompt=prompt,
-                        request_id=f"bench_{req_id}",
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                        callback=stats_callback
+                    model_key=model_key,
+                    prompt=prompt,
+                    request_id=f"bench_{req_id}",
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    callback=stats_callback,
                 ):
                     completion_text += chunk
 
-                final_stats = request_stats[-1] if request_stats else {
-                    'time': 0, 'tokens': 0, 'ttft': 0, 'tps': 0
-                }
-                final_stats['completion_text'] = completion_text
-                final_stats['request_id'] = req_id
+                final_stats = (
+                    request_stats[-1]
+                    if request_stats
+                    else {"time": 0, "tokens": 0, "ttft": 0, "tps": 0}
+                )
+                final_stats["completion_text"] = completion_text
+                final_stats["request_id"] = req_id
                 return final_stats
 
             except Exception as e:
                 logger.error(f"Request {req_id} failed: {str(e)}")
                 return {
-                    'request_id': req_id,
-                    'time': 0,
-                    'tokens': 0,
-                    'ttft': 0,
-                    'tps': 0,
-                    'error': str(e),
-                    'completion_text': ""
+                    "request_id": req_id,
+                    "time": 0,
+                    "tokens": 0,
+                    "ttft": 0,
+                    "tps": 0,
+                    "error": str(e),
+                    "completion_text": "",
                 }
 
         # Run concurrent requests
@@ -331,43 +328,46 @@ class FireworksBenchmark:
 
         # Filter successful results
         successful_results = [
-            r for r in results
-            if not isinstance(r, Exception) and r.get('tokens', 0) > 0
+            r
+            for r in results
+            if not isinstance(r, Exception) and r.get("tokens", 0) > 0
         ]
 
         total_time = time.time() - start_time
 
         if not successful_results:
             return {
-                'model': self.config.get_model(model_key)['name'],
-                'concurrency': concurrency,
-                'total_requests': concurrency,
-                'successful_requests': 0,
-                'total_time': total_time,
-                'avg_tokens_per_second': 0,
-                'avg_time_to_first_token': 0,
-                'aggregate_tokens_per_second': 0,
-                'total_tokens': 0,
-                'error_rate': 1.0
+                "model": self.config.get_model(model_key)["name"],
+                "concurrency": concurrency,
+                "total_requests": concurrency,
+                "successful_requests": 0,
+                "total_time": total_time,
+                "avg_tokens_per_second": 0,
+                "avg_time_to_first_token": 0,
+                "aggregate_tokens_per_second": 0,
+                "total_tokens": 0,
+                "error_rate": 1.0,
             }
 
         # Calculate aggregated metrics
-        total_tokens = sum(r['tokens'] for r in successful_results)
-        avg_tps = sum(r['tps'] for r in successful_results) / len(successful_results)
-        avg_ttft = sum(r['ttft'] for r in successful_results) / len(successful_results)
+        total_tokens = sum(r["tokens"] for r in successful_results)
+        avg_tps = sum(r["tps"] for r in successful_results) / len(successful_results)
+        avg_ttft = sum(r["ttft"] for r in successful_results) / len(successful_results)
         aggregate_tps = total_tokens / total_time if total_time > 0 else 0
 
         return {
-            'model': self.config.get_model(model_key)['name'],
-            'concurrency': concurrency,
-            'total_requests': concurrency,
-            'successful_requests': len(successful_results),
-            'total_time': total_time,
-            'avg_tokens_per_second': avg_tps,
-            'avg_time_to_first_token': avg_ttft,
-            'aggregate_tokens_per_second': aggregate_tps,
-            'total_tokens': total_tokens,
-            'error_rate': (concurrency - len(successful_results)) / concurrency,
-            'sample_completion': successful_results[0]['completion_text'] if successful_results else "",
-            'individual_results': successful_results
+            "model": self.config.get_model(model_key)["name"],
+            "concurrency": concurrency,
+            "total_requests": concurrency,
+            "successful_requests": len(successful_results),
+            "total_time": total_time,
+            "avg_tokens_per_second": avg_tps,
+            "avg_time_to_first_token": avg_ttft,
+            "aggregate_tokens_per_second": aggregate_tps,
+            "total_tokens": total_tokens,
+            "error_rate": (concurrency - len(successful_results)) / concurrency,
+            "sample_completion": (
+                successful_results[0]["completion_text"] if successful_results else ""
+            ),
+            "individual_results": successful_results,
         }
