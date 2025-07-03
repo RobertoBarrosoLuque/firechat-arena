@@ -1,0 +1,48 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+        exclude: docs/badges
+      - id: check-added-large-files
+        args: ["--maxkb=1024"] # allow up to 1MB
+      - id: check-json
+      - id: check-yaml
+        args: ["--unsafe"] # needed for some mkdocs extensions
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-toml
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: sql_formatter
+        name: SQL formatter
+        language: python
+        entry: sql-formatter --max-line-length=270
+        files: \.sql$
+        additional_dependencies: [sql-formatter]
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.1
+    hooks:
+      - id: ruff
+
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        args: ["--target-version", "py311"]
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        exclude: ^(graphql-mock/pnpm-lock\.yaml|.*\.ipynb)$
