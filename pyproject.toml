@@ -9,6 +9,7 @@ dependencies = [
     "pre-commit",
     "fastapi",
     "ipython",
+    "python-dotenv",
 ]
 
 [tool.setuptools.packages.find]

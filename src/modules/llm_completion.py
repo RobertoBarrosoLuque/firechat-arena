@@ -4,8 +4,15 @@ from typing import AsyncGenerator, Dict, Any, Optional, Callable
 from dataclasses import dataclass
 from fireworks import LLM
 import yaml
-
+from pathlib import Path
 from src.logging import logger
+from dotenv import load_dotenv
+
+load_dotenv()
+
+_FILE_PATH = Path(__file__).parents[2]
+_CONFIG_PATH = _FILE_PATH / "configs" / "config.yaml"
+
 
 @dataclass
 class StreamingStats:
@@ -42,8 +49,8 @@ class StreamingStats:
 class FireworksConfig:
     """Configuration loader for Fireworks models"""
 
-    def __init__(self, config_path: str = "config.yaml"):
-        with open(config_path, "r") as f:
+    def __init__(self):
+        with open(_CONFIG_PATH, "r") as f:
             self.config = yaml.safe_load(f)
 
     def get_model(self, model_key: str) -> Dict[str, Any]:
@@ -64,9 +71,9 @@ class FireworksConfig:
 class FireworksStreamer:
     """Helper class for streaming responses from Fireworks"""
 
-    def __init__(self, api_key: str, config_path: str = "config.yaml"):
+    def __init__(self, api_key: str):
         self.api_key = api_key
-        self.config = FireworksConfig(config_path)
+        self.config = FireworksConfig()
         self._llm_cache = {}
 
     def _get_llm(self, model_key: str) -> LLM:
@@ -106,7 +113,6 @@ class FireworksStreamer:
         if not request_id:
             request_id = f"req_{int(time.time() * 1000)}"
 
-        model_config = self.config.get_model(model_key)
         defaults = self.config.get_defaults()
 
         # Set parameters with fallbacks
@@ -182,7 +188,6 @@ class FireworksStreamer:
         if not request_id:
             request_id = f"chat_{int(time.time() * 1000)}"
 
-        model_config = self.config.get_model(model_key)
         defaults = self.config.get_defaults()
 
         # Set parameters with fallbacks
@@ -255,9 +260,9 @@ class FireworksStreamer:
 class FireworksBenchmark:
     """Benchmark helper for Fireworks models"""
 
-    def __init__(self, api_key: str, config_path: str = "config.yaml"):
-        self.streamer = FireworksStreamer(api_key, config_path)
-        self.config = FireworksConfig(config_path)
+    def __init__(self, api_key: str):
+        self.streamer = FireworksStreamer(api_key)
+        self.config = FireworksConfig()
 
     async def run_concurrent_benchmark(
         self,
@@ -274,7 +279,6 @@ class FireworksBenchmark:
             Dictionary with aggregated benchmark results
         """
         start_time = time.time()
-        all_stats = []
 
         async def single_request(req_id: int):
             request_stats = []

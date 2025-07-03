@@ -8,6 +8,7 @@ import json
 from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, asdict
 from src.modules.llm_completion import FireworksBenchmark, FireworksConfig
+from src.logging import logger
 
 
 @dataclass
@@ -81,10 +82,10 @@ class BenchmarkResult:
 class FireworksBenchmarkService:
     """Service for running comprehensive Fireworks benchmarks"""
 
-    def __init__(self, api_key: str, config_path: str = "config.yaml"):
+    def __init__(self, api_key: str):
         self.api_key = api_key
-        self.config = FireworksConfig(config_path)
-        self.benchmark = FireworksBenchmark(api_key, config_path)
+        self.config = FireworksConfig()
+        self.benchmark = FireworksBenchmark(api_key)
 
     async def run_single_benchmark(
         self,
