@@ -120,6 +120,34 @@ def generate_session_id() -> str:
     return str(uuid.uuid4())
 
 
+async def _stream_response(
+    model_key: str,
+    messages: List[Dict[str, Any]],
+    session_id: str,
+    max_tokens: Optional[int],
+    temperature: Optional[float],
+    error_context: str,
+):
+    """Helper to stream chat responses."""
+    try:
+        async for chunk in streamer.stream_chat_completion(
+            model_key=model_key,
+            messages=messages,
+            request_id=session_id,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        ):
+            # Format as server-sent events
+            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+        # Send completion signal
+        yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+
+    except Exception as e:
+        logger.error(f"Error in {error_context}: {str(e)}")
+        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+
 # Routes
 
 
@@ -169,30 +197,17 @@ async def single_chat(request: SingleChatRequest):
 
         session_id = request.conversation_id or generate_session_id()
 
-        async def generate_response():
-            try:
-                # Convert to messages format for chat completion
-                messages = [{"role": "user", "content": request.message}]
-
-                async for chunk in streamer.stream_chat_completion(
-                    model_key=request.model_key,
-                    messages=messages,
-                    request_id=session_id,
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                ):
-                    # Format as server-sent events
-                    yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
-
-                # Send completion signal
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-
-            except Exception as e:
-                logger.error(f"Error in single chat: {str(e)}")
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+        messages = [{"role": "user", "content": request.message}]
 
         return StreamingResponse(
-            generate_response(),
+            _stream_response(
+                model_key=request.model_key,
+                messages=messages,
+                session_id=session_id,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                error_context="single chat",
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -222,25 +237,15 @@ async def chat_completion(request: ChatCompletionRequest):
             {"role": msg.role, "content": msg.content} for msg in request.messages
         ]
 
-        async def generate_response():
-            try:
-                async for chunk in streamer.stream_chat_completion(
-                    model_key=request.model_key,
-                    messages=messages,
-                    request_id=session_id,
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                ):
-                    yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
-
-                yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
-
-            except Exception as e:
-                logger.error(f"Error in chat completion: {str(e)}")
-                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-
         return StreamingResponse(
-            generate_response(),
+            _stream_response(
+                model_key=request.model_key,
+                messages=messages,
+                session_id=session_id,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                error_context="chat completion",
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
