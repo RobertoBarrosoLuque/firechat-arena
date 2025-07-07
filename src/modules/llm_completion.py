@@ -1,11 +1,11 @@
 import asyncio
 import time
-from typing import AsyncGenerator, Dict, Any, Optional, Callable
+from typing import AsyncGenerator, Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass
 from fireworks import LLM
 import yaml
 from pathlib import Path
-from src.logging import logger
+from src.logger import logger
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -87,6 +87,26 @@ class FireworksStreamer:
             )
         return self._llm_cache[model_key]
 
+    def _prepare_llm_request(
+        self,
+        request_id: Optional[str],
+        max_tokens: Optional[int],
+        temperature: Optional[float],
+        request_prefix: str,
+    ) -> Tuple[str, int, float, StreamingStats]:
+        """Prepares parameters and stats for an LLM request."""
+        if not request_id:
+            request_id = f"{request_prefix}_{int(time.time() * 1000)}"
+
+        defaults = self.config.get_defaults()
+
+        max_tokens = max_tokens or defaults.get("max_tokens", 512)
+        temperature = temperature or defaults.get("temperature", 0.7)
+
+        stats = StreamingStats(request_id=request_id, start_time=time.time())
+
+        return request_id, max_tokens, temperature, stats
+
     async def stream_completion(
         self,
         model_key: str,
@@ -110,16 +130,9 @@ class FireworksStreamer:
         Yields:
             Text chunks as they're generated
         """
-        if not request_id:
-            request_id = f"req_{int(time.time() * 1000)}"
-
-        defaults = self.config.get_defaults()
-
-        # Set parameters with fallbacks
-        max_tokens = max_tokens or defaults.get("max_tokens", 512)
-        temperature = temperature or defaults.get("temperature", 0.7)
-
-        stats = StreamingStats(request_id=request_id, start_time=time.time())
+        request_id, max_tokens, temperature, stats = self._prepare_llm_request(
+            request_id, max_tokens, temperature, "req"
+        )
 
         try:
             llm = self._get_llm(model_key)
@@ -185,16 +198,9 @@ class FireworksStreamer:
         Yields:
             Text chunks as they're generated
         """
-        if not request_id:
-            request_id = f"chat_{int(time.time() * 1000)}"
-
-        defaults = self.config.get_defaults()
-
-        # Set parameters with fallbacks
-        max_tokens = max_tokens or defaults.get("max_tokens", 512)
-        temperature = temperature or defaults.get("temperature", 0.7)
-
-        stats = StreamingStats(request_id=request_id, start_time=time.time())
+        request_id, max_tokens, temperature, stats = self._prepare_llm_request(
+            request_id, max_tokens, temperature, "chat"
+        )
 
         try:
             llm = self._get_llm(model_key)

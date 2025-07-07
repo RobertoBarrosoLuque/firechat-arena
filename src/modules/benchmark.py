@@ -8,7 +8,7 @@ import json
 from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, asdict
 from src.modules.llm_completion import FireworksBenchmark, FireworksConfig
-from src.logging import logger
+from src.logger import logger
 
 
 @dataclass

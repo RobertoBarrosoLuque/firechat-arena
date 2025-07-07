@@ -6,7 +6,6 @@ setup:
 	@uv python install 3.11
 	@scripts/create_venv.sh
 	@. .venv/bin/activate && make install
-	@python -m scripts.setup_ssl
 
 install:
 	@echo "Installing dependencies..."

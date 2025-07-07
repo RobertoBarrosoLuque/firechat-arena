@@ -14,7 +14,7 @@ from src.modules.benchmark import (
     BenchmarkRequest,
     BenchmarkReporter,
 )
-from src.logging import logger
+from src.logger import logger
 
 
 # Initialize FastAPI app
