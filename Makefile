@@ -21,5 +21,5 @@ clean:
 	find . -type d -name .ipynb_checkpoints -exec rm -rf {} +
 
 run:
-	@. .venv/bin/activate
-	python -m src.app
+	@echo "Starting FastAPI server..."
+	@. .venv/bin/activate && python3 -m uvicorn src.routes.api_routes:app --reload --host 0.0.0.0 --port 8000

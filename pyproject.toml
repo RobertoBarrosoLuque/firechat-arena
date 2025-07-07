@@ -8,6 +8,7 @@ dependencies = [
     "fireworks-ai",
     "pre-commit",
     "fastapi",
+    "uvicorn",
     "ipython",
     "python-dotenv",
 ]
