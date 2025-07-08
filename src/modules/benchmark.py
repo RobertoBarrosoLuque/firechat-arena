@@ -252,7 +252,6 @@ class FireworksBenchmarkService:
             model_keys: List of model keys to compare
             prompt: Test prompt
             concurrency: Number of concurrent requests per model
-            max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             progress_callback: Optional callback for progress updates
 

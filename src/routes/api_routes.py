@@ -51,7 +51,6 @@ class ChatMessage(BaseModel):
 class SingleChatRequest(BaseModel):
     model_key: str = Field(..., description="Model key from config")
     message: str = Field(..., description="User message")
-    max_tokens: Optional[int] = Field(512, description="Maximum tokens to generate")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
     conversation_id: Optional[str] = Field(
         None, description="Conversation ID for tracking"
@@ -61,7 +60,6 @@ class SingleChatRequest(BaseModel):
 class ChatCompletionRequest(BaseModel):
     model_key: str = Field(..., description="Model key from config")
     messages: List[ChatMessage] = Field(..., description="List of chat messages")
-    max_tokens: Optional[int] = Field(512, description="Maximum tokens to generate")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
     conversation_id: Optional[str] = Field(
         None, description="Conversation ID for tracking"
@@ -71,7 +69,6 @@ class ChatCompletionRequest(BaseModel):
 class ComparisonChatRequest(BaseModel):
     model_keys: List[str] = Field(..., description="Two model keys to compare")
     message: str = Field(..., description="User message")
-    max_tokens: Optional[int] = Field(512, description="Maximum tokens to generate")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
     comparison_id: Optional[str] = Field(None, description="Comparison ID for tracking")
 
@@ -123,7 +120,6 @@ async def _stream_response(
     model_key: str,
     messages: List[Dict[str, Any]],
     session_id: str,
-    max_tokens: Optional[int],
     temperature: Optional[float],
     error_context: str,
 ):
@@ -133,7 +129,6 @@ async def _stream_response(
             model_key=model_key,
             messages=messages,
             request_id=session_id,
-            max_tokens=max_tokens,
             temperature=temperature,
         ):
             # Format as server-sent events
@@ -203,7 +198,6 @@ async def single_chat(request: SingleChatRequest):
                 model_key=request.model_key,
                 messages=messages,
                 session_id=session_id,
-                max_tokens=request.max_tokens,
                 temperature=request.temperature,
                 error_context="single chat",
             ),
@@ -241,7 +235,6 @@ async def chat_completion(request: ChatCompletionRequest):
                 model_key=request.model_key,
                 messages=messages,
                 session_id=session_id,
-                max_tokens=request.max_tokens,
                 temperature=request.temperature,
                 error_context="chat completion",
             ),
@@ -288,7 +281,6 @@ async def comparison_chat(request: ComparisonChatRequest):
                         model_key=model_key,
                         messages=messages,
                         request_id=f"{comparison_id}_{i}",
-                        max_tokens=request.max_tokens,
                         temperature=request.temperature,
                     )
 

@@ -90,29 +90,26 @@ class FireworksStreamer:
     def _prepare_llm_request(
         self,
         request_id: Optional[str],
-        max_tokens: Optional[int],
         temperature: Optional[float],
         request_prefix: str,
-    ) -> Tuple[str, int, float, StreamingStats]:
+    ) -> Tuple[str, float, StreamingStats]:
         """Prepares parameters and stats for an LLM request."""
         if not request_id:
             request_id = f"{request_prefix}_{int(time.time() * 1000)}"
 
         defaults = self.config.get_defaults()
 
-        max_tokens = max_tokens or defaults.get("max_tokens", 512)
         temperature = temperature or defaults.get("temperature", 0.7)
 
         stats = StreamingStats(request_id=request_id, start_time=time.time())
 
-        return request_id, max_tokens, temperature, stats
+        return request_id, temperature, stats
 
     async def stream_completion(
         self,
         model_key: str,
         prompt: str,
         request_id: str = None,
-        max_tokens: int = None,
         temperature: float = None,
         callback: Optional[Callable[[str, StreamingStats], None]] = None,
     ) -> AsyncGenerator[str, None]:
@@ -123,15 +120,14 @@ class FireworksStreamer:
             model_key: Key for model in config
             prompt: Input prompt
             request_id: Unique request identifier
-            max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             callback: Optional callback for streaming stats
 
         Yields:
             Text chunks as they're generated
         """
-        request_id, max_tokens, temperature, stats = self._prepare_llm_request(
-            request_id, max_tokens, temperature, "req"
+        request_id, temperature, stats = self._prepare_llm_request(
+            request_id, temperature, "req"
         )
 
         try:
@@ -140,7 +136,6 @@ class FireworksStreamer:
             # Create streaming completion
             response_generator = llm.completions.create(
                 prompt=prompt,
-                max_tokens=max_tokens,
                 temperature=temperature,
                 stream=True,
             )
@@ -180,7 +175,6 @@ class FireworksStreamer:
         model_key: str,
         messages: list,
         request_id: str = None,
-        max_tokens: int = None,
         temperature: float = None,
         callback: Optional[Callable[[str, StreamingStats], None]] = None,
     ) -> AsyncGenerator[str, None]:
@@ -191,15 +185,14 @@ class FireworksStreamer:
             model_key: Key for model in config
             messages: List of chat messages
             request_id: Unique request identifier
-            max_tokens: Maximum tokens to generate
             temperature: Sampling temperature
             callback: Optional callback for streaming stats
 
         Yields:
             Text chunks as they're generated
         """
-        request_id, max_tokens, temperature, stats = self._prepare_llm_request(
-            request_id, max_tokens, temperature, "chat"
+        request_id, temperature, stats = self._prepare_llm_request(
+            request_id, temperature, "chat"
         )
 
         try:
@@ -208,7 +201,6 @@ class FireworksStreamer:
             # Create streaming chat completion
             response_generator = llm.chat.completions.create(
                 messages=messages,
-                max_tokens=max_tokens,
                 temperature=temperature,
                 stream=True,
             )
@@ -275,7 +267,6 @@ class FireworksBenchmark:
         model_key: str,
         prompt: str,
         concurrency: int = 10,
-        max_tokens: int = None,
         temperature: float = None,
     ) -> Dict[str, Any]:
         """
@@ -305,7 +296,6 @@ class FireworksBenchmark:
                     model_key=model_key,
                     prompt=prompt,
                     request_id=f"bench_{req_id}",
-                    max_tokens=max_tokens,
                     temperature=temperature,
                     callback=stats_callback,
                 ):
