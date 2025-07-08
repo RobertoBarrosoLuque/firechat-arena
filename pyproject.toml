@@ -11,6 +11,9 @@ dependencies = [
     "uvicorn",
     "ipython",
     "python-dotenv",
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
 ]
 
 [tool.setuptools.packages.find]

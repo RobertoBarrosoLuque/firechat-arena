@@ -3,15 +3,12 @@ import time
 from typing import AsyncGenerator, Dict, Any, Optional, Callable, Tuple
 from dataclasses import dataclass
 from fireworks import LLM
-import yaml
-from pathlib import Path
 from src.logger import logger
+from src.constants.configs import APP_CONFIG
+from src.modules.utils import add_user_request_to_prompt
 from dotenv import load_dotenv
 
 load_dotenv()
-
-_FILE_PATH = Path(__file__).parents[2]
-_CONFIG_PATH = _FILE_PATH / "configs" / "config.yaml"
 
 
 @dataclass
@@ -50,8 +47,7 @@ class FireworksConfig:
     """Configuration loader for Fireworks models"""
 
     def __init__(self):
-        with open(_CONFIG_PATH, "r") as f:
-            self.config = yaml.safe_load(f)
+        self.config = APP_CONFIG
 
     def get_model(self, model_key: str) -> Dict[str, Any]:
         """Get model configuration by key"""
@@ -135,7 +131,7 @@ class FireworksStreamer:
 
             # Create streaming completion
             response_generator = llm.completions.create(
-                prompt=prompt,
+                prompt=add_user_request_to_prompt(prompt),
                 temperature=temperature,
                 stream=True,
             )
@@ -294,7 +290,7 @@ class FireworksBenchmark:
                 completion_text = ""
                 async for chunk in self.streamer.stream_completion(
                     model_key=model_key,
-                    prompt=prompt,
+                    prompt=add_user_request_to_prompt(prompt),
                     request_id=f"bench_{req_id}",
                     temperature=temperature,
                     callback=stats_callback,

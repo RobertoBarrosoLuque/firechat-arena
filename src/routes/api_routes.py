@@ -71,6 +71,10 @@ class ComparisonChatRequest(BaseModel):
     message: str = Field(..., description="User message")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
     comparison_id: Optional[str] = Field(None, description="Comparison ID for tracking")
+    speed_test: bool = Field(False, description="Enable speed test benchmarking")
+    concurrency: int = Field(
+        1, ge=1, le=20, description="Number of concurrent requests for speed test"
+    )
 
 
 class BenchmarkConfigRequest(BaseModel):
@@ -325,6 +329,68 @@ async def comparison_chat(request: ComparisonChatRequest):
 
                     # Small delay to prevent tight loop
                     await asyncio.sleep(0.01)
+
+                # Run speed test if requested
+                if request.speed_test:
+                    try:
+                        logger.info(
+                            f"Starting speed test for models: {request.model_keys}"
+                        )
+
+                        # Run concurrent benchmarks for both models
+                        benchmark_results = (
+                            await benchmark_service.run_comparison_benchmark(
+                                model_keys=request.model_keys,
+                                prompt=request.message,
+                                concurrency=request.concurrency,
+                                max_tokens=100,  # Shorter tokens for speed test
+                                temperature=request.temperature,
+                            )
+                        )
+
+                        # Extract speed test metrics
+                        model1_result = benchmark_results[request.model_keys[0]]
+                        model2_result = benchmark_results[request.model_keys[1]]
+
+                        speed_test_data = {
+                            "model1_tps": model1_result.avg_tokens_per_second,
+                            "model2_tps": model2_result.avg_tokens_per_second,
+                            "model1_ttft": model1_result.avg_time_to_first_token
+                            * 1000,  # Convert to ms
+                            "model2_ttft": model2_result.avg_time_to_first_token * 1000,
+                            "model1_times": [
+                                r.get("total_time", 0) * 1000
+                                for r in model1_result.individual_results
+                                if "total_time" in r
+                            ],
+                            "model2_times": [
+                                r.get("total_time", 0) * 1000
+                                for r in model2_result.individual_results
+                                if "total_time" in r
+                            ],
+                            "concurrency": request.concurrency,
+                            "model1_success_rate": model1_result.success_rate,
+                            "model2_success_rate": model2_result.success_rate,
+                            "model1_aggregate_tps": model1_result.aggregate_tokens_per_second,
+                            "model2_aggregate_tps": model2_result.aggregate_tokens_per_second,
+                        }
+
+                        # Stream speed test results
+                        yield f"""data: {json.dumps({
+                            'type': 'speed_test_results',
+                            'results': speed_test_data
+                        })}\n\n"""
+
+                        logger.info(
+                            f"Speed test completed: Model1 TPS={speed_test_data['model1_tps']:.2f}, Model2 TPS={speed_test_data['model2_tps']:.2f}"
+                        )
+
+                    except Exception as e:
+                        logger.error(f"Error in speed test: {str(e)}")
+                        yield f"""data: {json.dumps({
+                            'type': 'speed_test_error',
+                            'error': str(e)
+                        })}\n\n"""
 
                 # Send final completion signal
                 yield f"data: {json.dumps({'type': 'comparison_done','comparison_id': comparison_id})}\n\n"

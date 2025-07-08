@@ -1,4 +1,4 @@
-.PHONY: setup install clean run
+.PHONY: setup install clean run test
 
 setup:
 	@echo "Setting up local environment..."
@@ -23,3 +23,7 @@ clean:
 run:
 	@echo "Starting FastAPI server..."
 	@. .venv/bin/activate && python3 -m uvicorn src.routes.api_routes:app --reload --host 0.0.0.0 --port 8000
+
+test:
+	@echo "Running tests..."
+	@. .venv/bin/activate && python -m pytest tests/ -v
