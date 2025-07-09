@@ -132,9 +132,35 @@ class SessionManager:
         model_keys: Optional[List[str]] = None,
         session_type: str = "single",
     ) -> ConversationSession:
-        """Get an existing session or create a new one."""
+        """Get an existing session or create a new one. Clears history if model changes."""
         if session_id and session_id in self.sessions:
             session = self.sessions[session_id]
+
+            # Check if model has changed and clear history if needed
+            model_changed = False
+            if session_type == "single" and model_key is not None:
+                if session.model_key != model_key:
+                    model_changed = True
+                    old_model = session.model_key
+                    session.model_key = model_key
+                    logger.info(
+                        f"Model changed in session {session_id} from {old_model} to {model_key}"
+                    )
+            elif session_type == "compare" and model_keys is not None:
+                if session.model_keys != model_keys:
+                    model_changed = True
+                    old_models = session.model_keys
+                    session.model_keys = model_keys
+                    logger.info(
+                        f"Models changed in session {session_id} from {old_models} to {model_keys}"
+                    )
+
+            if model_changed:
+                session.clear_history()
+                logger.info(
+                    f"Cleared conversation history for session {session_id} due to model change"
+                )
+
             session.update_activity()
             return session
 
@@ -176,10 +202,6 @@ class SessionManager:
 
         assistant_message = {"role": "assistant", "content": content}
 
-        # Add model information if provided
-        if model_key:
-            assistant_message["model"] = model_key
-
         session.add_message(assistant_message)
 
     def set_conversation_history(
@@ -201,11 +223,6 @@ class SessionManager:
                     content = content[: self.max_message_length]
 
                 cleaned_message = {"role": msg["role"], "content": content}
-
-                # Preserve model information if present
-                if "model" in msg:
-                    cleaned_message["model"] = msg["model"]
-
                 cleaned_messages.append(cleaned_message)
 
         # Apply history length limit

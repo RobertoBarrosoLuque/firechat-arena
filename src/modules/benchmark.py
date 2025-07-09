@@ -1,8 +1,3 @@
-"""
-Fireworks-specific benchmark service for performance testing
-"""
-
-import asyncio
 import time
 import json
 from typing import Dict, List, Optional, Any, Callable
@@ -121,7 +116,6 @@ class FireworksBenchmarkService:
                 model_key=request.model_key,
                 prompt=request.prompt,
                 concurrency=request.concurrency,
-                max_tokens=request.max_tokens,
                 temperature=request.temperature,
             )
 
@@ -419,37 +413,3 @@ class BenchmarkReporter:
                         result.error_rate * 100,
                     ]
                 )
-
-
-# Example usage and testing
-async def example_usage():
-    """Example of how to use the benchmark service"""
-    # Initialize service
-    service = FireworksBenchmarkService(api_key="your-api-key")
-
-    # Single model benchmark
-    request = BenchmarkRequest(
-        model_key="qwen3_235b",
-        prompt="Tell me a story about a brave knight.",
-        concurrency=5,
-        max_tokens=200,
-    )
-
-    result = await service.run_single_benchmark(request)
-    print(f"Benchmark completed: {result.avg_tokens_per_second:.2f} TPS")
-
-    # Comparison benchmark
-    comparison_results = await service.run_comparison_benchmark(
-        model_keys=["qwen3_235b", "llama_scout"],
-        prompt="Explain quantum computing in simple terms.",
-        concurrency=10,
-    )
-
-    # Generate report
-    report = BenchmarkReporter.generate_comparison_report(comparison_results)
-    print(f"Best model: {report['winners']['best_aggregate_throughput']['model']}")
-
-
-if __name__ == "__main__":
-    # For testing
-    asyncio.run(example_usage())

@@ -8,11 +8,7 @@ import json
 import os
 import uuid
 from src.modules.llm_completion import FireworksStreamer, FireworksConfig
-from src.modules.benchmark import (
-    FireworksBenchmarkService,
-    BenchmarkRequest,
-    BenchmarkReporter,
-)
+from src.modules.benchmark import FireworksBenchmarkService
 from src.modules.session import SessionManager
 from src.logger import logger
 
@@ -161,7 +157,6 @@ async def _stream_response_with_session(
             temperature=temperature,
         ):
             assistant_content += chunk
-            # Format as server-sent events
             yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
 
         # Save assistant response to session
@@ -246,16 +241,21 @@ async def single_chat(request: SingleChatRequest):
 
         session_id = request.conversation_id or generate_session_id()
 
+        logger.info(f"Chat request for session: {session_id}")
+
         # Get or create session
         session_manager.get_or_create_session(
             session_id=session_id, model_key=request.model_key, session_type="single"
         )
 
-        # Convert request messages to dict format and set as conversation history
-        messages_dict = [
-            {"role": msg.role, "content": msg.content} for msg in request.messages
-        ]
-        session_manager.set_conversation_history(session_id, messages_dict)
+        if request.messages:
+            latest_message = request.messages[-1]  # Get the last message
+            if latest_message.role == "user":
+                session_manager.add_user_message(session_id, latest_message.content)
+
+        messages_dict = session_manager.get_conversation_history(session_id)
+
+        logger.info(f"Chat history for session: {session_id} \n {messages_dict}")
 
         return StreamingResponse(
             _stream_response_with_session(
@@ -278,43 +278,6 @@ async def single_chat(request: SingleChatRequest):
     except Exception as e:
         logger.error(f"Error in single chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Chat request failed")
-
-
-@app.post("/chat/completion")
-async def chat_completion(request: ChatCompletionRequest):
-    """Chat completion with conversation history"""
-    try:
-        if not validate_model_key(request.model_key):
-            raise HTTPException(
-                status_code=400, detail=f"Invalid model key: {request.model_key}"
-            )
-
-        session_id = request.conversation_id or generate_session_id()
-        messages = [
-            {"role": msg.role, "content": msg.content} for msg in request.messages
-        ]
-
-        return StreamingResponse(
-            _stream_response(
-                model_key=request.model_key,
-                messages=messages,
-                session_id=session_id,
-                temperature=request.temperature,
-                error_context="chat completion",
-            ),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Session-ID": session_id,
-            },
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in chat completion endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail="Chat completion failed")
 
 
 @app.post("/chat/compare")
@@ -341,11 +304,12 @@ async def comparison_chat(request: ComparisonChatRequest):
             session_type="compare",
         )
 
-        # Convert request messages to dict format and set as conversation history
-        messages_dict = [
-            {"role": msg.role, "content": msg.content} for msg in request.messages
-        ]
-        session_manager.set_conversation_history(comparison_id, messages_dict)
+        if request.messages:
+            latest_message = request.messages[-1]
+            if latest_message.role == "user":
+                session_manager.add_user_message(comparison_id, latest_message.content)
+
+        messages_dict = session_manager.get_conversation_history(comparison_id)
 
         async def generate_comparison():
             try:
@@ -422,10 +386,20 @@ async def comparison_chat(request: ComparisonChatRequest):
                         )
 
                         # Run concurrent benchmarks for both models
+                        # Use the last user message as the prompt for speed test
+                        user_messages = [
+                            msg for msg in messages if msg.get("role") == "user"
+                        ]
+                        last_user_message = (
+                            user_messages[-1]["content"]
+                            if user_messages
+                            else "Hello, world!"
+                        )
+
                         benchmark_results = (
                             await benchmark_service.run_comparison_benchmark(
                                 model_keys=request.model_keys,
-                                prompt=request.message,
+                                prompt=last_user_message,
                                 concurrency=request.concurrency,
                                 max_tokens=100,  # Shorter tokens for speed test
                                 temperature=request.temperature,
@@ -498,121 +472,6 @@ async def comparison_chat(request: ComparisonChatRequest):
     except Exception as e:
         logger.error(f"Error in comparison chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Comparison chat failed")
-
-
-@app.post("/benchmark/single")
-async def single_benchmark(request: BenchmarkConfigRequest):
-    """Run benchmark on a single model"""
-    try:
-        if not validate_model_key(request.model_key):
-            raise HTTPException(
-                status_code=400, detail=f"Invalid model key: {request.model_key}"
-            )
-
-        benchmark_request = BenchmarkRequest(
-            model_key=request.model_key,
-            prompt=request.prompt,
-            concurrency=request.concurrency,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
-
-        result = await benchmark_service.run_single_benchmark(benchmark_request)
-        return {"benchmark_result": result.to_dict()}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in single benchmark: {str(e)}")
-        raise HTTPException(status_code=500, detail="Benchmark failed")
-
-
-@app.post("/benchmark/compare")
-async def comparison_benchmark(request: ComparisonBenchmarkRequest):
-    """Run benchmark comparison across multiple models"""
-    try:
-        for model_key in request.model_keys:
-            if not validate_model_key(model_key):
-                raise HTTPException(
-                    status_code=400, detail=f"Invalid model key: {model_key}"
-                )
-
-        results = await benchmark_service.run_comparison_benchmark(
-            model_keys=request.model_keys,
-            prompt=request.prompt,
-            concurrency=request.concurrency,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
-
-        # Generate comparison report
-        report = BenchmarkReporter.generate_comparison_report(results)
-
-        return {"comparison_report": report}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in comparison benchmark: {str(e)}")
-        raise HTTPException(status_code=500, detail="Comparison benchmark failed")
-
-
-@app.post("/benchmark/stream")
-async def streaming_benchmark(request: BenchmarkConfigRequest):
-    """Run benchmark with real-time progress streaming"""
-    try:
-        if not validate_model_key(request.model_key):
-            raise HTTPException(
-                status_code=400, detail=f"Invalid model key: {request.model_key}"
-            )
-
-        async def generate_progress():
-            progress_data = []
-
-            def progress_callback(event_type: str, data: Dict[str, Any]):
-                progress_data.append({"event": event_type, "data": data})
-
-            try:
-                benchmark_request = BenchmarkRequest(
-                    model_key=request.model_key,
-                    prompt=request.prompt,
-                    concurrency=request.concurrency,
-                    max_tokens=request.max_tokens,
-                    temperature=request.temperature,
-                )
-
-                result = await benchmark_service.run_single_benchmark(
-                    benchmark_request, progress_callback
-                )
-
-                # Stream all progress events
-                for progress in progress_data:
-                    yield f"data: {json.dumps(progress)}\n\n"
-
-                # Send final result
-                yield f"""data: {json.dumps({
-                    'event': 'final_result',
-                    'data': result.to_dict()
-                })}\n\n"""
-
-            except Exception as e:
-                logger.error(f"Error in streaming benchmark: {str(e)}")
-                yield f"""data: {json.dumps({
-                    'event': 'error',
-                    'data': {'error': str(e)}
-                })}\n\n"""
-
-        return StreamingResponse(
-            generate_progress(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in streaming benchmark endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail="Streaming benchmark failed")
 
 
 # Error handlers

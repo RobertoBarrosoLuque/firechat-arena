@@ -193,7 +193,8 @@ class FireworksStreamer:
 
         try:
             llm = self._get_llm(model_key)
-
+            print("..........................................")
+            print("Messages:", messages)
             # Create streaming chat completion
             response_generator = llm.chat.completions.create(
                 messages=messages,
