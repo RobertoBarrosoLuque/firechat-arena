@@ -294,9 +294,7 @@ async def comparison_chat(request: ComparisonChatRequest):
                 raise HTTPException(
                     status_code=400, detail=f"Invalid model key: {model_key}"
                 )
-
         comparison_id = request.comparison_id or generate_session_id()
-
         # Get or create session for comparison
         session_manager.get_or_create_session(
             session_id=comparison_id,
@@ -382,11 +380,10 @@ async def comparison_chat(request: ComparisonChatRequest):
                 if request.speed_test:
                     try:
                         logger.info(
-                            f"Starting speed test for models: {request.model_keys}"
+                            f"Starting speed test for models: {request.model_keys} "
+                            f"with concurrency: {request.concurrency}"
                         )
 
-                        # Run concurrent benchmarks for both models
-                        # Use the last user message as the prompt for speed test
                         user_messages = [
                             msg for msg in messages if msg.get("role") == "user"
                         ]
@@ -413,6 +410,8 @@ async def comparison_chat(request: ComparisonChatRequest):
                         speed_test_data = {
                             "model1_tps": model1_result.avg_tokens_per_second,
                             "model2_tps": model2_result.avg_tokens_per_second,
+                            "model1_rps": model1_result.requests_per_second,
+                            "model2_rps": model2_result.requests_per_second,
                             "model1_ttft": model1_result.avg_time_to_first_token
                             * 1000,  # Convert to ms
                             "model2_ttft": model2_result.avg_time_to_first_token * 1000,
@@ -427,8 +426,6 @@ async def comparison_chat(request: ComparisonChatRequest):
                                 if "total_time" in r
                             ],
                             "concurrency": request.concurrency,
-                            "model1_success_rate": model1_result.success_rate,
-                            "model2_success_rate": model2_result.success_rate,
                             "model1_aggregate_tps": model1_result.aggregate_tokens_per_second,
                             "model2_aggregate_tps": model2_result.aggregate_tokens_per_second,
                         }

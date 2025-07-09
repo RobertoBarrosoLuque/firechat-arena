@@ -22,6 +22,19 @@ models:
     display_name: "Qwen3 235B"
     deployment_type: "serverless"
 
+  qwen_3_30b:
+    id: "accounts/fireworks/models/qwen3-30b-a3b"
+    name: "Qwen 3 30B"
+    display_name: "Qwen 3 30B"
+    deployment_type: "serverless"
+
+  llama_70b:
+    id: "accounts/fireworks/models/llama-v3p3-70b-instruct"
+    name: "Llama 70B"
+    display_name: "Llama 70B"
+    deployment_type: "serverless"
+
+
   llama_scout:
     id: "accounts/fireworks/models/llama4-scout-instruct-basic"
     name: "Llama Scout"

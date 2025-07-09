@@ -73,6 +73,13 @@ class BenchmarkResult:
             return sum(self.completion_lengths) / len(self.completion_lengths)
         return 0
 
+    @property
+    def requests_per_second(self) -> float:
+        """Actual requests per second (successful requests / total time)"""
+        if self.total_time > 0:
+            return self.successful_requests / self.total_time
+        return 0
+
 
 class FireworksBenchmarkService:
     """Service for running comprehensive Fireworks benchmarks"""
