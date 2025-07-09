@@ -46,5 +46,7 @@ api:
 
 
 chat:
-  max_history_length: 20
+  max_history_length: 10
   max_message_length: 10000
+  session_timeout_hours: 1
+  cleanup_interval_minutes: 10

@@ -1,5 +1,4 @@
 import asyncio
-import uuid
 from typing import Dict, List, Optional, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -7,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import json
 import os
+import uuid
 from src.modules.llm_completion import FireworksStreamer, FireworksConfig
 from src.modules.benchmark import (
     FireworksBenchmarkService,
     BenchmarkRequest,
     BenchmarkReporter,
 )
+from src.modules.session import SessionManager
 from src.logger import logger
 
 
@@ -40,6 +41,7 @@ if not api_key:
 
 streamer = FireworksStreamer(api_key)
 benchmark_service = FireworksBenchmarkService(api_key)
+session_manager = SessionManager(config.config)
 
 
 # Pydantic models
@@ -50,7 +52,7 @@ class ChatMessage(BaseModel):
 
 class SingleChatRequest(BaseModel):
     model_key: str = Field(..., description="Model key from config")
-    message: str = Field(..., description="User message")
+    messages: List[ChatMessage] = Field(..., description="List of chat messages")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
     conversation_id: Optional[str] = Field(
         None, description="Conversation ID for tracking"
@@ -68,7 +70,7 @@ class ChatCompletionRequest(BaseModel):
 
 class ComparisonChatRequest(BaseModel):
     model_keys: List[str] = Field(..., description="Two model keys to compare")
-    message: str = Field(..., description="User message")
+    messages: List[ChatMessage] = Field(..., description="List of chat messages")
     temperature: Optional[float] = Field(0.7, description="Sampling temperature")
     comparison_id: Optional[str] = Field(None, description="Comparison ID for tracking")
     speed_test: bool = Field(False, description="Enable speed test benchmarking")
@@ -101,18 +103,13 @@ class ComparisonBenchmarkRequest(BaseModel):
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="Sampling temperature")
 
 
-# In-memory storage for active sessions (use Redis in production)
-active_sessions: Dict[str, Dict] = {}
-
-
-# Helper functions
 def validate_model_key(model_key: str) -> bool:
     """Validate that model key exists in config"""
     try:
         config.get_model(model_key)
-        return True
     except ValueError:
         return False
+    return True
 
 
 def generate_session_id() -> str:
@@ -146,7 +143,39 @@ async def _stream_response(
         yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
 
-# Routes
+async def _stream_response_with_session(
+    model_key: str,
+    messages: List[Dict[str, Any]],
+    session_id: str,
+    temperature: Optional[float],
+    error_context: str,
+):
+    """Helper to stream chat responses and save assistant responses to session."""
+    assistant_content = ""
+
+    try:
+        async for chunk in streamer.stream_chat_completion(
+            model_key=model_key,
+            messages=messages,
+            request_id=session_id,
+            temperature=temperature,
+        ):
+            assistant_content += chunk
+            # Format as server-sent events
+            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+        # Save assistant response to session
+        if assistant_content:
+            session_manager.add_assistant_message(
+                session_id, assistant_content, model_key
+            )
+
+        # Send completion signal
+        yield f"data: {json.dumps({'type': 'done', 'session_id': session_id})}\n\n"
+
+    except Exception as e:
+        logger.error(f"Error in {error_context}: {str(e)}")
+        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
 
 
 @app.get("/")
@@ -184,9 +213,31 @@ async def get_model_info(model_key: str):
         raise HTTPException(status_code=500, detail="Failed to get model information")
 
 
+@app.get("/sessions/stats")
+async def get_session_stats():
+    """Get session management statistics"""
+    try:
+        stats = session_manager.get_session_stats()
+        return {"session_stats": stats}
+    except Exception as e:
+        logger.error(f"Error getting session stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get session statistics")
+
+
+@app.get("/sessions")
+async def list_sessions():
+    """List all active sessions"""
+    try:
+        sessions = session_manager.list_sessions()
+        return {"sessions": sessions}
+    except Exception as e:
+        logger.error(f"Error listing sessions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list sessions")
+
+
 @app.post("/chat/single")
 async def single_chat(request: SingleChatRequest):
-    """Single model chat with streaming response"""
+    """Single model chat with streaming response and conversation history"""
     try:
         if not validate_model_key(request.model_key):
             raise HTTPException(
@@ -195,12 +246,21 @@ async def single_chat(request: SingleChatRequest):
 
         session_id = request.conversation_id or generate_session_id()
 
-        messages = [{"role": "user", "content": request.message}]
+        # Get or create session
+        session_manager.get_or_create_session(
+            session_id=session_id, model_key=request.model_key, session_type="single"
+        )
+
+        # Convert request messages to dict format and set as conversation history
+        messages_dict = [
+            {"role": msg.role, "content": msg.content} for msg in request.messages
+        ]
+        session_manager.set_conversation_history(session_id, messages_dict)
 
         return StreamingResponse(
-            _stream_response(
+            _stream_response_with_session(
                 model_key=request.model_key,
-                messages=messages,
+                messages=messages_dict,
                 session_id=session_id,
                 temperature=request.temperature,
                 error_context="single chat",
@@ -259,7 +319,7 @@ async def chat_completion(request: ChatCompletionRequest):
 
 @app.post("/chat/compare")
 async def comparison_chat(request: ComparisonChatRequest):
-    """Side-by-side model comparison chat"""
+    """Side-by-side model comparison chat with conversation history"""
     try:
         if len(request.model_keys) != 2:
             raise HTTPException(
@@ -274,9 +334,23 @@ async def comparison_chat(request: ComparisonChatRequest):
 
         comparison_id = request.comparison_id or generate_session_id()
 
+        # Get or create session for comparison
+        session_manager.get_or_create_session(
+            session_id=comparison_id,
+            model_keys=request.model_keys,
+            session_type="compare",
+        )
+
+        # Convert request messages to dict format and set as conversation history
+        messages_dict = [
+            {"role": msg.role, "content": msg.content} for msg in request.messages
+        ]
+        session_manager.set_conversation_history(comparison_id, messages_dict)
+
         async def generate_comparison():
             try:
-                messages = [{"role": "user", "content": request.message}]
+                messages = messages_dict
+                assistant_contents = ["", ""]  # Track responses for both models
 
                 # Create async generators for both models
                 generators = {}
@@ -297,6 +371,9 @@ async def comparison_chat(request: ComparisonChatRequest):
                             chunk = await generators[gen_key].__anext__()
                             model_index = int(gen_key.split("_")[1])
                             model_key = request.model_keys[model_index]
+
+                            # Track content for session saving
+                            assistant_contents[model_index] += chunk
 
                             yield f"""data: {json.dumps({
                                 'type': 'content',
@@ -329,6 +406,13 @@ async def comparison_chat(request: ComparisonChatRequest):
 
                     # Small delay to prevent tight loop
                     await asyncio.sleep(0.01)
+
+                # Save assistant responses to session for both models
+                for i, content in enumerate(assistant_contents):
+                    if content:
+                        session_manager.add_assistant_message(
+                            comparison_id, content, request.model_keys[i]
+                        )
 
                 # Run speed test if requested
                 if request.speed_test:
@@ -551,17 +635,42 @@ async def internal_error_handler(request, exc):
     )
 
 
+# Background session cleanup task
+async def cleanup_expired_sessions():
+    """Background task to clean up expired sessions"""
+    while True:
+        try:
+            cleanup_interval = config.config.get("chat", {}).get(
+                "cleanup_interval_minutes", 60
+            )
+            session_timeout = config.config.get("chat", {}).get(
+                "session_timeout_hours", 1
+            )
+
+            # Clean up expired sessions
+            removed_count = session_manager.cleanup_expired_sessions(session_timeout)
+
+            if removed_count > 0:
+                logger.info(f"Cleaned up {removed_count} expired sessions")
+
+            # Wait for the next cleanup interval
+            await asyncio.sleep(cleanup_interval * 60)
+
+        except Exception as e:
+            logger.error(f"Error in session cleanup task: {str(e)}")
+            # Wait 5 minutes before retrying on error
+            await asyncio.sleep(300)
+
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():
     logger.info("Fireworks Chat & Benchmark API starting up...")
     logger.info(f"Available models: {list(config.get_all_models().keys())}")
 
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("Fireworks Chat & Benchmark API shutting down...")
+    # Start the background session cleanup task
+    asyncio.create_task(cleanup_expired_sessions())
+    logger.info("Session cleanup task started")
 
 
 if __name__ == "__main__":
