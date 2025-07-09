@@ -71,7 +71,7 @@ class ComparisonChatRequest(BaseModel):
     comparison_id: Optional[str] = Field(None, description="Comparison ID for tracking")
     speed_test: bool = Field(False, description="Enable speed test benchmarking")
     concurrency: int = Field(
-        1, ge=1, le=20, description="Number of concurrent requests for speed test"
+        1, ge=1, le=50, description="Number of concurrent requests for speed test"
     )
 
 
