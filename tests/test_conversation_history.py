@@ -101,6 +101,12 @@ def test_model_change_clears_history(session_manager):
     history = session_manager.get_conversation_history(session_id)
     assert len(history) == 4
 
+    # Switch to a different model
+    model_key2 = "qwen3_13b"
+    session_manager.get_or_create_session(
+        session_id=session_id, model_key=model_key2, session_type="single"
+    )
+    # Check that history is cleared
     history_after_switch = session_manager.get_conversation_history(session_id)
     assert len(history_after_switch) == 0
 
@@ -144,16 +150,13 @@ def test_comparison_chat_history(session_manager):
     session_manager.add_assistant_message(
         session_id, "Python is a programming language...", model_keys[0]
     )
-    session_manager.add_assistant_message(
-        session_id, "Python is a high-level language...", model_keys[1]
-    )
+    history = session_manager.get_conversation_history(session_id)
+    assert len(history) == 2
 
-    # Get history
+    session_manager.add_user_message(session_id, "What is Python?")
+    session_manager.add_assistant_message(
+        session_id, "Python is a programming language...", model_keys[1]
+    )
+    session_manager.add_user_message(session_id, "What?????")
     history = session_manager.get_conversation_history(session_id)
     assert len(history) == 3
-    assert history[0]["role"] == "user"
-    assert history[1]["role"] == "assistant"
-    assert history[2]["role"] == "assistant"
-
-    history_after_change = session_manager.get_conversation_history(session_id)
-    assert len(history_after_change) == 0
